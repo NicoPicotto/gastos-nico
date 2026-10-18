@@ -40,9 +40,10 @@ Proyecto Supabase: `ouddvtxkejykmjskznqf` (región São Paulo).
 - `supabase secrets list` muestra el **hash SHA-256** del secret, no su valor.
 - Si el server devuelve 401, claude.ai asume OAuth y falla el registro del conector.
 - Es stateless: GET/DELETE devuelven 405.
+- Los montos en las respuestas van en palabras ("20.000 pesos", "20 dólares"), nunca con "$": la app de Claude, sobre todo por voz, lo interpreta como dólares.
 - Claude no siempre respeta las *instrucciones del server*. Las reglas críticas (como qué va en cada categoría) tienen que estar también en la `description` de la tool o del parámetro.
-- Las tools destructivas piden datos descriptivos (`borrar_movimiento` exige categoría, monto y fecha), que se muestran en el diálogo de permiso y se validan contra el registro antes de borrar.
-- Después de cambiar tools, hay que abrir un chat nuevo en Claude para que tome el schema nuevo.
+- `borrar_movimiento` pide (opcionales) categoría, monto y fecha: se muestran en el diálogo de permiso y, si vienen, se validan contra el registro antes de borrar.
+- **claude.ai cachea el schema de las tools del conector**, incluso entre chats nuevos. Al cambiar una tool, mantener compatibilidad hacia atrás: no agregar parámetros obligatorios nuevos a una tool existente (hacerlos opcionales y validar si vienen). Para forzar el refresco: desconectar y reconectar el conector.
 
 ## Frontend
 

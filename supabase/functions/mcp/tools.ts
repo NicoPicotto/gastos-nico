@@ -30,12 +30,13 @@ const MEDIOS_PAGO = ["debito", "efectivo", "transferencia", "otro"] as const;
 const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato YYYY-MM-DD");
 const mesSchema = z.string().regex(/^\d{4}-\d{2}$/, "Formato YYYY-MM");
 
-const fmtArs = new Intl.NumberFormat("es-AR", {
-  style: "currency",
-  currency: "ARS",
-  maximumFractionDigits: 0,
-});
-const fmtUsd = new Intl.NumberFormat("es-AR", { style: "currency", currency: "USD" });
+// Moneda en palabras, nunca "$": la app de Claude (y su voz) lo lee como dólares.
+const numArs = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+const numUsd = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 });
+const fmtArs = { format: (n: number) => `${numArs.format(n)} pesos` };
+const fmtUsd = { format: (n: number) => `${numUsd.format(n)} dólares` };
+
+const MONEDA_DESC = 'Casi siempre "ARS" (pesos). "USD" SOLO si el usuario dice explícitamente dólares/USD/verdes.';
 
 function fmtMonto(m: Pick<MovimientoV, "monto" | "moneda" | "monto_ars">): string {
   if (m.monto == null) return "monto a confirmar";
@@ -144,7 +145,7 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
       inputSchema: {
         categoria: categoriaSchema,
         monto: z.number().positive().describe("Monto en la moneda indicada. '12 lucas' = 12000."),
-        moneda: z.enum(["ARS", "USD"]).default("ARS"),
+        moneda: z.enum(["ARS", "USD"]).default("ARS").describe(MONEDA_DESC),
         fecha: fechaSchema.optional().describe("YYYY-MM-DD. Por defecto, hoy en Argentina."),
         descripcion: z.string().max(200).optional(),
         medio_pago: z.enum(MEDIOS_PAGO).optional(),
@@ -332,7 +333,7 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
       const totalIngresos = sumar(ingresos);
 
       const lineas = [
-        `Período ${fmtFecha(rango.desde)} – ${fmtFecha(rango.hasta)}`,
+        `Período ${fmtFecha(rango.desde)} – ${fmtFecha(rango.hasta)} (montos en pesos argentinos)`,
         `Ingresos: ${fmtArs.format(totalIngresos)}`,
         `Gastos: ${fmtArs.format(totalGastos)}`,
         `Balance: ${fmtArs.format(totalIngresos - totalGastos)}` +
@@ -399,14 +400,15 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
     "borrar_movimiento",
     {
       description:
-        "Borra un movimiento. Pasá categoría, monto y fecha tal como figuran en listar_movimientos: " +
+        "Borra un movimiento. Pasá SIEMPRE categoría, monto y fecha tal como figuran en listar_movimientos: " +
         "se muestran al usuario al pedir permiso y se validan contra el registro antes de borrar.",
+      // Solo id es obligatorio: claude.ai puede tener cacheado un schema viejo (solo id).
       inputSchema: {
         id: z.number().int(),
-        categoria: z.enum(nombres),
-        monto: z.number().positive().nullable().describe("null si es un pendiente sin monto."),
-        moneda: z.enum(["ARS", "USD"]).default("ARS"),
-        fecha: fechaSchema,
+        categoria: z.enum(nombres).optional(),
+        monto: z.number().positive().nullable().optional().describe("null si es un pendiente sin monto."),
+        moneda: z.enum(["ARS", "USD"]).optional(),
+        fecha: fechaSchema.optional(),
         descripcion: z.string().optional(),
       },
       annotations: { destructiveHint: true },
@@ -414,10 +416,11 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
     safe(async ({ id, categoria, monto, moneda, fecha }) => {
       const actual = await obtenerMovimiento(id);
       if (!actual) return fail(`No existe el movimiento #${id}.`);
-      const coincide = actual.categoria === categoria &&
-        actual.fecha === fecha &&
-        actual.moneda === moneda &&
-        (actual.monto == null ? monto == null : monto != null && Number(actual.monto) === monto);
+      const montoActual = actual.monto == null ? null : Number(actual.monto);
+      const coincide = (categoria === undefined || actual.categoria === categoria) &&
+        (fecha === undefined || actual.fecha === fecha) &&
+        (moneda === undefined || actual.moneda === moneda) &&
+        (monto === undefined || montoActual === monto);
       if (!coincide) {
         return fail(`Los datos no coinciden con el movimiento #${id}, no se borró nada. El registro es: ${linea(actual)}`);
       }
@@ -436,7 +439,7 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
     safe(async () => {
       const c = await obtenerMep();
       const venta = c.venta.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      return ok(`Dólar MEP venta: $ ${venta} (${fmtFecha(c.fecha)}).`);
+      return ok(`Dólar MEP venta: ${venta} pesos por dólar (${fmtFecha(c.fecha)}).`);
     }),
   );
 
@@ -482,7 +485,7 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
         descripcion: z.string().min(1).max(200),
         modo: z.enum(["fijo", "variable"]),
         monto: z.number().positive().optional().describe("Obligatorio si es fijo."),
-        moneda: z.enum(["ARS", "USD"]).default("ARS"),
+        moneda: z.enum(["ARS", "USD"]).default("ARS").describe(MONEDA_DESC),
         dia_del_mes: z.number().int().min(1).max(31),
       },
     },
