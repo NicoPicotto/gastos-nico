@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+}
+
+:root {
+  color-scheme: light;
+  --bg: #f5f4f1;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #7a7974;
+  --line: #e3e2de;
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --good: #006300;
+  --bad: #b42d2d;
+  --warn: #8a5a00;
+
+  /* Paleta categórica (slots validados) */
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s-neutral: #9a9994;
+  --s-ingreso: #1baf7a;
+  --s-gasto: #6250d6;
+  --grid: #e3e2de;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211;
+    --surface: #1a1a19;
+    --surface-2: #262624;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #8e8d86;
+    --line: #2f2f2c;
+    --accent: #3987e5;
+    --accent-ink: #ffffff;
+    --good: #4cc24c;
+    --bad: #e66767;
+    --warn: #fab219;
+
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s-neutral: #6f6e69;
+    --s-ingreso: #199e70;
+    --s-gasto: #9085e9;
+    --grid: #2f2f2c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211;
+  --surface: #1a1a19;
+  --surface-2: #262624;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #8e8d86;
+  --line: #2f2f2c;
+  --accent: #3987e5;
+  --accent-ink: #ffffff;
+  --good: #4cc24c;
+  --bad: #e66767;
+  --warn: #fab219;
+
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s-neutral: #6f6e69;
+  --s-ingreso: #199e70;
+  --s-gasto: #9085e9;
+  --grid: #2f2f2c;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+@utility field {
+  @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-accent text-accent-ink hover:opacity-90;
+}
+
+@utility btn-ghost {
+  @apply btn text-ink-2 hover:bg-surface-2;
+}
+
+@utility card {
+  @apply rounded-2xl border border-line bg-surface p-4 sm:p-5;
+}
