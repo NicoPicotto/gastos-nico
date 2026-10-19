@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { useGuardarMovimiento, useMovimientos, usePendientes } from '../lib/api'
+import { useMovimientos } from '../lib/api'
 import {
   colorSlot,
   fmtCompacto,
   fmtFecha,
-  fmtMonto,
   fmtTotal,
   nombreMes,
   sumarMeses,
@@ -20,8 +19,7 @@ interface Props {
   mep: number | null
 }
 
-const sumar = (ms: Movimiento[]) => ms.reduce((s, m) => s + Number(m.monto_ars ?? 0), 0)
-const confirmados = (ms: Movimiento[]) => ms.filter((m) => m.estado === 'confirmado')
+const sumar = (ms: Movimiento[]) => ms.reduce((s, m) => s + Number(m.monto_ars), 0)
 
 export function Resumen({ mes, vista, mep }: Props) {
   const desde = `${sumarMeses(mes, -11)}-01`
@@ -29,8 +27,7 @@ export function Resumen({ mes, vista, mep }: Props) {
   const fmt = (n: number) => fmtTotal(n, vista, mep)
 
   const datos = useMemo(() => {
-    const ok = confirmados(movs)
-    const delMes = (m: string) => ok.filter((x) => x.fecha.startsWith(m))
+    const delMes = (m: string) => movs.filter((x) => x.fecha.startsWith(m))
     const actual = delMes(mes)
     const anterior = delMes(sumarMeses(mes, -1))
     const gastos = actual.filter((m) => m.tipo === 'gasto')
@@ -83,8 +80,6 @@ export function Resumen({ mes, vista, mep }: Props) {
           tono={ahorro != null && ahorro < 0 ? 'bad' : undefined}
         />
       </section>
-
-      <Pendientes />
 
       <div className="grid gap-4 lg:grid-cols-5">
         <section className="card lg:col-span-3">
@@ -289,68 +284,5 @@ function Evolucion({
         </div>
       )}
     </>
-  )
-}
-
-function Pendientes() {
-  const { data: pendientes = [] } = usePendientes()
-  const guardar = useGuardarMovimiento()
-  const [montos, setMontos] = useState<Record<number, string>>({})
-
-  if (!pendientes.length) return null
-
-  return (
-    <section className="card border-warn/40">
-      <h2 className="mb-2 font-semibold">
-        <span aria-hidden>⏳</span> Pendientes de confirmar
-      </h2>
-      <ul className="divide-y divide-line">
-        {pendientes.map((p) => (
-          <li key={p.id} className="flex flex-wrap items-center gap-3 py-2 text-sm">
-            <div className="min-w-0 flex-1">
-              <p>{p.descripcion || p.categoria}</p>
-              <p className="text-xs text-muted">
-                {fmtFecha(p.fecha)} · {p.categoria}
-                {p.monto != null && ` · estimado ${fmtMonto(p.monto, p.moneda)}`}
-              </p>
-            </div>
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                const monto = Number(montos[p.id])
-                if (!(monto > 0)) return
-                guardar.mutate({
-                  id: p.id,
-                  input: {
-                    categoria_id: p.categoria_id,
-                    monto,
-                    moneda: p.moneda,
-                    fecha: p.fecha,
-                    descripcion: p.descripcion,
-                    medio_pago: p.medio_pago,
-                  },
-                })
-              }}
-            >
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                placeholder={`Monto ${p.moneda}`}
-                className="field w-32"
-                value={montos[p.id] ?? (p.monto != null ? String(p.monto) : '')}
-                onChange={(e) => setMontos({ ...montos, [p.id]: e.target.value })}
-              />
-              <button className="btn-primary" disabled={guardar.isPending}>
-                Confirmar
-              </button>
-            </form>
-          </li>
-        ))}
-      </ul>
-      {guardar.error && <p className="mt-2 text-sm text-bad">{guardar.error.message}</p>}
-    </section>
   )
 }

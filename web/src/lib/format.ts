@@ -18,8 +18,7 @@ export function fmtCompacto(montoArs: number, vista: Vista, mep: number | null):
   return `${vista === 'USD' ? 'US$' : '$'}${compacto.format(v)}`
 }
 
-export function fmtMonto(monto: number | null, moneda: 'ARS' | 'USD'): string {
-  if (monto == null) return '—'
+export function fmtMonto(monto: number, moneda: 'ARS' | 'USD'): string {
   return moneda === 'USD' ? usdExacto.format(monto) : ars.format(monto)
 }
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useBorrarMovimiento, useMovimientos } from '../lib/api'
 import { colorSlot, fmtArs, fmtFecha, fmtMonto, ultimoDia } from '../lib/format'
-import { MEDIOS_PAGO, type Movimiento } from '../lib/types'
+import type { Movimiento } from '../lib/types'
 import { MovimientoForm } from './MovimientoForm'
 
 const ORIGEN: Record<Movimiento['origen'], string> = { mcp: 'Claude', web: 'Web', cron: 'Auto' }
@@ -22,9 +22,7 @@ export function Movimientos({ mes }: { mes: string }) {
     )
   }, [movs, filtro, tipo])
 
-  const total = visibles
-    .filter((m) => m.estado === 'confirmado')
-    .reduce((s, m) => s + (m.tipo === 'ingreso' ? 1 : -1) * Number(m.monto_ars ?? 0), 0)
+  const total = visibles.reduce((s, m) => s + (m.tipo === 'ingreso' ? 1 : -1) * Number(m.monto_ars), 0)
 
   return (
     <div className="space-y-4">
@@ -67,14 +65,13 @@ export function Movimientos({ mes }: { mes: string }) {
                 <th className="px-4 py-2 font-medium">Fecha</th>
                 <th className="px-4 py-2 font-medium">Categoría</th>
                 <th className="px-4 py-2 font-medium">Descripción</th>
-                <th className="px-4 py-2 font-medium">Medio</th>
                 <th className="px-4 py-2 text-right font-medium">Monto</th>
                 <th className="px-4 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {visibles.map((m) => (
-                <tr key={m.id} className={m.estado === 'pendiente' ? 'text-muted' : ''}>
+                <tr key={m.id}>
                   <td className="tabular px-4 py-2">{fmtFecha(m.fecha)}</td>
                   <td className="px-4 py-2">
                     <span className="flex items-center gap-2">
@@ -84,16 +81,12 @@ export function Movimientos({ mes }: { mes: string }) {
                   </td>
                   <td className="px-4 py-2">
                     {m.descripcion}
-                    {m.estado === 'pendiente' && <span className="ml-2 text-xs text-warn">pendiente</span>}
                     <span className="ml-2 text-xs text-muted">{ORIGEN[m.origen]}</span>
-                  </td>
-                  <td className="px-4 py-2 text-ink-2">
-                    {MEDIOS_PAGO.find((x) => x.value === m.medio_pago)?.label ?? ''}
                   </td>
                   <td className={`tabular px-4 py-2 text-right ${m.tipo === 'ingreso' ? 'text-good' : ''}`}>
                     {m.tipo === 'ingreso' ? '+' : ''}
                     {fmtMonto(m.monto, m.moneda)}
-                    {m.moneda === 'USD' && m.monto_ars != null && (
+                    {m.moneda === 'USD' && (
                       <span className="block text-xs text-muted">{fmtArs(Number(m.monto_ars))}</span>
                     )}
                   </td>
@@ -113,7 +106,7 @@ export function Movimientos({ mes }: { mes: string }) {
             </tbody>
             <tfoot className="border-t border-line">
               <tr>
-                <td colSpan={4} className="px-4 py-2 text-ink-2">
+                <td colSpan={3} className="px-4 py-2 text-ink-2">
                   {visibles.length} movimientos · balance
                 </td>
                 <td className={`tabular px-4 py-2 text-right font-medium ${total < 0 ? 'text-bad' : 'text-good'}`}>

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useCategorias, useGuardarMovimiento } from '../lib/api'
 import { hoyAR } from '../lib/format'
-import { MEDIOS_PAGO, type MedioPago, type Moneda, type Movimiento } from '../lib/types'
+import type { Moneda, Movimiento } from '../lib/types'
 
 interface Props {
   movimiento?: Movimiento
@@ -12,10 +12,9 @@ export function MovimientoForm({ movimiento, onDone }: Props) {
   const { data: categorias = [] } = useCategorias()
   const guardar = useGuardarMovimiento()
   const [categoriaId, setCategoriaId] = useState(movimiento?.categoria_id ?? 1)
-  const [monto, setMonto] = useState(movimiento?.monto != null ? String(movimiento.monto) : '')
+  const [monto, setMonto] = useState(movimiento ? String(movimiento.monto) : '')
   const [moneda, setMoneda] = useState<Moneda>(movimiento?.moneda ?? 'ARS')
   const [fecha, setFecha] = useState(movimiento?.fecha ?? hoyAR())
-  const [medio, setMedio] = useState<MedioPago | ''>(movimiento?.medio_pago ?? 'debito')
   const [descripcion, setDescripcion] = useState(movimiento?.descripcion ?? '')
 
   const grupos = [...Map.groupBy(categorias, (c) => c.grupo).entries()]
@@ -30,7 +29,6 @@ export function MovimientoForm({ movimiento, onDone }: Props) {
           monto: Number(monto),
           moneda,
           fecha,
-          medio_pago: medio || null,
           descripcion: descripcion.trim() || null,
         },
       },
@@ -78,18 +76,7 @@ export function MovimientoForm({ movimiento, onDone }: Props) {
         <span className="mb-1 block text-xs text-ink-2">Fecha</span>
         <input type="date" required className="field" value={fecha} onChange={(e) => setFecha(e.target.value)} />
       </label>
-      <label className="sm:col-span-2">
-        <span className="mb-1 block text-xs text-ink-2">Medio de pago</span>
-        <select className="field" value={medio} onChange={(e) => setMedio(e.target.value as MedioPago | '')}>
-          <option value="">—</option>
-          {MEDIOS_PAGO.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="sm:col-span-4">
+      <label className="sm:col-span-6">
         <span className="mb-1 block text-xs text-ink-2">Descripción</span>
         <input className="field" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
       </label>

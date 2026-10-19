@@ -15,9 +15,8 @@ Registro de gastos e ingresos personales de Nico (Córdoba, Argentina).
 - Al responder, nombrá la moneda en palabras ("20.000 pesos"), nunca el signo "$" solo: se confunde con dólares, sobre todo por voz.
 - Las categorías son fijas: elegí la más adecuada de la lista. Súper, kioscos y almacén van a "Supermercado". Si ninguna encaja, usá "Otros" y aclaralo.
 - Compras con TARJETA DE CRÉDITO: NO las registres. Avisá que entran con el pago del resumen (categoría "Tarjeta crédito"). Débito, efectivo y transferencia sí se registran.
-- Si el pago corresponde a un recurrente pendiente (luz, gas, resumen de tarjeta), registrar_movimiento lo confirma solo.
 - Si te mandan una foto de un ticket, extraé total, fecha y comercio, y registralo.
-- Ante ambigüedad (monto, categoría o medio de pago crítico), preguntá antes de cargar. Antes de borrar, confirmá.
+- Ante ambigüedad (monto o categoría), preguntá antes de cargar. Antes de borrar, confirmá.
 `.trim();
 
 let categoriasCache: Categoria[] | undefined;

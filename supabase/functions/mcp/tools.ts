@@ -16,17 +16,14 @@ interface MovimientoV {
   categoria: string;
   tipo: "gasto" | "ingreso";
   grupo: string;
-  monto: number | null;
+  monto: number;
   moneda: "ARS" | "USD";
   cotizacion_mep: number | null;
-  monto_ars: number | null;
+  monto_ars: number;
   fecha: string;
   descripcion: string | null;
-  medio_pago: string | null;
-  estado: "confirmado" | "pendiente";
 }
 
-const MEDIOS_PAGO = ["debito", "efectivo", "transferencia", "otro"] as const;
 const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato YYYY-MM-DD");
 const mesSchema = z.string().regex(/^\d{4}-\d{2}$/, "Formato YYYY-MM");
 
@@ -39,10 +36,7 @@ const fmtUsd = { format: (n: number) => `${numUsd.format(n)} dólares` };
 const MONEDA_DESC = 'Casi siempre "ARS" (pesos). "USD" SOLO si el usuario dice explícitamente dólares/USD/verdes.';
 
 function fmtMonto(m: Pick<MovimientoV, "monto" | "moneda" | "monto_ars">): string {
-  if (m.monto == null) return "monto a confirmar";
-  if (m.moneda === "USD") {
-    return `${fmtUsd.format(m.monto)}${m.monto_ars != null ? ` (≈ ${fmtArs.format(m.monto_ars)})` : ""}`;
-  }
+  if (m.moneda === "USD") return `${fmtUsd.format(m.monto)} (≈ ${fmtArs.format(m.monto_ars)})`;
   return fmtArs.format(m.monto);
 }
 
@@ -53,9 +47,7 @@ function fmtFecha(iso: string): string {
 
 function linea(m: MovimientoV): string {
   const partes = [`#${m.id}`, fmtFecha(m.fecha), m.categoria, fmtMonto(m)];
-  if (m.medio_pago) partes.push(m.medio_pago);
   if (m.descripcion) partes.push(`"${m.descripcion}"`);
-  if (m.estado === "pendiente") partes.push("[PENDIENTE]");
   return partes.join(" · ");
 }
 
@@ -99,6 +91,8 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
   const categoriaSchema = z.enum(nombres).describe(
     "Supermercado: súper, kioscos, almacén, verdulería, carnicería, dietética. " +
       "Gastos Hogar: limpieza, ferretería, arreglos, muebles. Gastos Auto: nafta, mecánico, lavado, estacionamiento. " +
+      "Esparcimiento: bares, restaurantes, delivery, cine, recitales, salidas, hobbies, streaming. " +
+      "Cápitas Logia: cuota o cápita de la logia. " +
       "Tarjeta crédito: SOLO el pago del resumen. Otros: únicamente si ninguna otra encaja.",
   );
 
@@ -140,58 +134,18 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
     {
       description:
         "Registra un gasto o ingreso (el tipo lo define la categoría). NO usar para compras con tarjeta de crédito: " +
-        "esas entran con el pago del resumen (categoría 'Tarjeta crédito'). Si ya existe un pendiente de la misma " +
-        "categoría en ese mes (ej. la luz), lo confirma con este monto en vez de crear uno nuevo.",
+        "esas entran con el pago del resumen (categoría 'Tarjeta crédito').",
       inputSchema: {
         categoria: categoriaSchema,
         monto: z.number().positive().describe("Monto en la moneda indicada. '12 lucas' = 12000."),
         moneda: z.enum(["ARS", "USD"]).default("ARS").describe(MONEDA_DESC),
         fecha: fechaSchema.optional().describe("YYYY-MM-DD. Por defecto, hoy en Argentina."),
         descripcion: z.string().max(200).optional(),
-        medio_pago: z.enum(MEDIOS_PAGO).optional(),
-        forzar_nuevo: z
-          .boolean()
-          .default(false)
-          .describe("true para crear un movimiento nuevo aunque haya un pendiente de esa categoría."),
       },
     },
-    safe(async ({ categoria, monto, moneda, fecha, descripcion, medio_pago, forzar_nuevo }) => {
+    safe(async ({ categoria, monto, moneda, fecha, descripcion }) => {
       const cat = porNombre.get(categoria)!;
-      const fechaMov = fecha ?? hoyAR();
       const cotizacion_mep = await cotizacionPara(moneda);
-
-      if (!forzar_nuevo) {
-        const { desde, hasta } = rangoMes(fechaMov.slice(0, 7));
-        const { data: pendiente, error } = await db()
-          .from("movimientos")
-          .select("id, descripcion")
-          .eq("categoria_id", cat.id)
-          .eq("estado", "pendiente")
-          .gte("fecha", desde)
-          .lte("fecha", hasta)
-          .order("fecha")
-          .limit(1)
-          .maybeSingle();
-        if (error) throw error;
-
-        if (pendiente) {
-          const { error: upErr } = await db()
-            .from("movimientos")
-            .update({
-              monto,
-              moneda,
-              cotizacion_mep,
-              fecha: fechaMov,
-              estado: "confirmado",
-              medio_pago: medio_pago ?? null,
-              descripcion: descripcion ?? pendiente.descripcion,
-            })
-            .eq("id", pendiente.id);
-          if (upErr) throw upErr;
-          const mov = (await obtenerMovimiento(pendiente.id))!;
-          return ok(`Confirmé el pendiente de ${categoria}: ${linea(mov)}`);
-        }
-      }
 
       const { data, error } = await db()
         .from("movimientos")
@@ -200,9 +154,8 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
           monto,
           moneda,
           cotizacion_mep,
-          fecha: fechaMov,
+          fecha: fecha ?? hoyAR(),
           descripcion: descripcion ?? null,
-          medio_pago: medio_pago ?? null,
           origen: "mcp",
         })
         .select("id")
@@ -210,58 +163,6 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
       if (error) throw error;
       const mov = (await obtenerMovimiento(data.id))!;
       return ok(`Registrado ${cat.tipo}: ${linea(mov)}`);
-    }),
-  );
-
-  server.registerTool(
-    "listar_pendientes",
-    {
-      description: "Lista los movimientos recurrentes pendientes de confirmar (ej. luz, gas, resumen de tarjeta).",
-      annotations: { readOnlyHint: true },
-    },
-    safe(async () => {
-      const { data, error } = await db()
-        .from("movimientos_v")
-        .select("*")
-        .eq("estado", "pendiente")
-        .order("fecha");
-      if (error) throw error;
-      if (!data.length) return ok("No hay pendientes.");
-      return ok((data as MovimientoV[]).map(linea).join("\n"));
-    }),
-  );
-
-  server.registerTool(
-    "confirmar_pendiente",
-    {
-      description: "Confirma un pendiente por id (de listar_pendientes) con el monto final.",
-      inputSchema: {
-        id: z.number().int(),
-        monto: z.number().positive(),
-        moneda: z.enum(["ARS", "USD"]).optional().describe("Por defecto, la del pendiente."),
-        fecha: fechaSchema.optional().describe("Fecha de pago. Por defecto, la del pendiente."),
-        medio_pago: z.enum(MEDIOS_PAGO).optional(),
-      },
-    },
-    safe(async ({ id, monto, moneda, fecha, medio_pago }) => {
-      const actual = await obtenerMovimiento(id);
-      if (!actual) return fail(`No existe el movimiento #${id}.`);
-      if (actual.estado !== "pendiente") return fail(`El movimiento #${id} ya está confirmado.`);
-
-      const mon = moneda ?? actual.moneda;
-      const { error } = await db()
-        .from("movimientos")
-        .update({
-          monto,
-          moneda: mon,
-          cotizacion_mep: await cotizacionPara(mon),
-          fecha: fecha ?? actual.fecha,
-          medio_pago: medio_pago ?? null,
-          estado: "confirmado",
-        })
-        .eq("id", id);
-      if (error) throw error;
-      return ok(`Confirmado: ${linea((await obtenerMovimiento(id))!)}`);
     }),
   );
 
@@ -323,12 +224,10 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
         .lte("fecha", rango.hasta);
       if (error) throw error;
       const movs = data as MovimientoV[];
-      const confirmados = movs.filter((m) => m.estado === "confirmado");
-      const pendientes = movs.filter((m) => m.estado === "pendiente");
 
-      const sumar = (ms: MovimientoV[]) => ms.reduce((s, m) => s + Number(m.monto_ars ?? 0), 0);
-      const gastos = confirmados.filter((m) => m.tipo === "gasto");
-      const ingresos = confirmados.filter((m) => m.tipo === "ingreso");
+      const sumar = (ms: MovimientoV[]) => ms.reduce((s, m) => s + Number(m.monto_ars), 0);
+      const gastos = movs.filter((m) => m.tipo === "gasto");
+      const ingresos = movs.filter((m) => m.tipo === "ingreso");
       const totalGastos = sumar(gastos);
       const totalIngresos = sumar(ingresos);
 
@@ -354,10 +253,6 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
         for (const { c, total: t } of porCat) lineas.push(`    · ${c}: ${fmtArs.format(t)}`);
       }
       if (!gruposOrdenados.length) lineas.push("- (sin gastos)");
-
-      if (pendientes.length) {
-        lineas.push("", `Pendientes sin confirmar (no suman): ${pendientes.map((p) => p.categoria).join(", ")}`);
-      }
       return ok(lineas.join("\n"));
     }),
   );
@@ -373,7 +268,6 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
         moneda: z.enum(["ARS", "USD"]).optional(),
         fecha: fechaSchema.optional(),
         descripcion: z.string().max(200).optional(),
-        medio_pago: z.enum(MEDIOS_PAGO).optional(),
       },
     },
     safe(async ({ id, categoria, moneda, ...resto }) => {
@@ -406,7 +300,7 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
       inputSchema: {
         id: z.number().int(),
         categoria: z.enum(nombres).optional(),
-        monto: z.number().positive().nullable().optional().describe("null si es un pendiente sin monto."),
+        monto: z.number().positive().optional(),
         moneda: z.enum(["ARS", "USD"]).optional(),
         fecha: fechaSchema.optional(),
         descripcion: z.string().optional(),
@@ -416,11 +310,10 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
     safe(async ({ id, categoria, monto, moneda, fecha }) => {
       const actual = await obtenerMovimiento(id);
       if (!actual) return fail(`No existe el movimiento #${id}.`);
-      const montoActual = actual.monto == null ? null : Number(actual.monto);
       const coincide = (categoria === undefined || actual.categoria === categoria) &&
         (fecha === undefined || actual.fecha === fecha) &&
         (moneda === undefined || actual.moneda === moneda) &&
-        (monto === undefined || montoActual === monto);
+        (monto === undefined || Number(actual.monto) === monto);
       if (!coincide) {
         return fail(`Los datos no coinciden con el movimiento #${id}, no se borró nada. El registro es: ${linea(actual)}`);
       }
@@ -440,86 +333,6 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
       const c = await obtenerMep();
       const venta = c.venta.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       return ok(`Dólar MEP venta: ${venta} pesos por dólar (${fmtFecha(c.fecha)}).`);
-    }),
-  );
-
-  server.registerTool(
-    "listar_recurrentes",
-    {
-      description: "Lista los gastos/ingresos recurrentes configurados.",
-      annotations: { readOnlyHint: true },
-    },
-    safe(async () => {
-      const { data, error } = await db()
-        .from("recurrentes")
-        .select("id, descripcion, modo, monto, moneda, dia_del_mes, activo, categorias(nombre)")
-        .order("dia_del_mes");
-      if (error) throw error;
-      if (!data.length) return ok("No hay recurrentes configurados.");
-      return ok(
-        data
-          .map((r) =>
-            [
-              `#${r.id}`,
-              (r.categorias as unknown as { nombre: string }).nombre,
-              r.descripcion,
-              `día ${r.dia_del_mes}`,
-              r.modo === "fijo" ? fmtMonto({ monto: r.monto, moneda: r.moneda, monto_ars: null }) : "monto variable",
-              r.activo ? "activo" : "pausado",
-            ].join(" · ")
-          )
-          .join("\n"),
-      );
-    }),
-  );
-
-  server.registerTool(
-    "crear_recurrente",
-    {
-      description:
-        "Crea un recurrente mensual. modo 'fijo': se registra solo con el monto indicado. " +
-        "modo 'variable' (luz, gas, tarjeta): se crea como pendiente y se confirma el monto al pagar. " +
-        "Si el día ya pasó este mes, arranca el mes próximo.",
-      inputSchema: {
-        categoria: categoriaSchema,
-        descripcion: z.string().min(1).max(200),
-        modo: z.enum(["fijo", "variable"]),
-        monto: z.number().positive().optional().describe("Obligatorio si es fijo."),
-        moneda: z.enum(["ARS", "USD"]).default("ARS").describe(MONEDA_DESC),
-        dia_del_mes: z.number().int().min(1).max(31),
-      },
-    },
-    safe(async ({ categoria, modo, monto, ...resto }) => {
-      if (modo === "fijo" && monto == null) return fail("Un recurrente fijo necesita monto.");
-      const { data, error } = await db()
-        .from("recurrentes")
-        .insert({ ...resto, modo, monto: modo === "fijo" ? monto : null, categoria_id: porNombre.get(categoria)!.id })
-        .select("id")
-        .single();
-      if (error) throw error;
-      return ok(`Recurrente #${data.id} creado: ${categoria}, día ${resto.dia_del_mes}, ${modo}.`);
-    }),
-  );
-
-  server.registerTool(
-    "actualizar_recurrente",
-    {
-      description: "Modifica, pausa o reactiva un recurrente por id.",
-      inputSchema: {
-        id: z.number().int(),
-        activo: z.boolean().optional(),
-        monto: z.number().positive().optional(),
-        dia_del_mes: z.number().int().min(1).max(31).optional(),
-        descripcion: z.string().max(200).optional(),
-      },
-    },
-    safe(async ({ id, ...resto }) => {
-      const cambios = Object.fromEntries(Object.entries(resto).filter(([, v]) => v !== undefined));
-      if (!Object.keys(cambios).length) return fail("No indicaste ningún cambio.");
-      const { data, error } = await db().from("recurrentes").update(cambios).eq("id", id).select("id");
-      if (error) throw error;
-      if (!data.length) return fail(`No existe el recurrente #${id}.`);
-      return ok(`Recurrente #${id} actualizado.`);
     }),
   );
 }

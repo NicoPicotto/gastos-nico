@@ -4,7 +4,7 @@ App personal (un solo usuario) de gastos e ingresos. La carga se hace hablándol
 
 ## Stack y estructura
 
-- `supabase/migrations/`: SQL numerado (schema, categorías, recurrentes, cron)
+- `supabase/migrations/`: SQL numerado (schema, categorías, cron, cambios posteriores)
 - `supabase/functions/mcp/`: servidor MCP (Deno, `@modelcontextprotocol/sdk` con `WebStandardStreamableHTTPServerTransport`, Hono). Las tools están en `tools.ts` y las instrucciones del server en `index.ts`.
 - `supabase/functions/fx-refresh/`: guarda la cotización MEP (dolarapi.com `/v1/dolares/bolsa`) en `cotizaciones`
 - `supabase/functions/_shared/`: cliente con service role (`db.ts`) y cotización con cache y fallback (`fx.ts`)
@@ -23,10 +23,9 @@ Proyecto Supabase: `ouddvtxkejykmjskznqf` (región São Paulo).
 ## Reglas de negocio
 
 - **Categorías fijas** (seed en `..._categorias.sql`, agrupadas en `grupos`). No hay ABM: se cambian con una migración nueva. El MCP expone los nombres como `z.enum`, así que Claude no puede inventar categorías.
-- **Tarjeta de crédito:** solo se registra el pago del resumen (categoría "Tarjeta crédito"). Las compras con crédito NO se cargan sueltas. `medio_pago` no tiene la opción crédito a propósito.
+- **Tarjeta de crédito:** solo se registra el pago del resumen (categoría "Tarjeta crédito"). Las compras con crédito NO se cargan sueltas.
 - **USD:** cada movimiento congela `cotizacion_mep` al cargarse, y `monto_ars` es una columna generada. Los totales del dashboard suman `monto_ars`; el toggle USD divide por el MEP actual.
-- **Recurrentes:** el modo `fijo` genera un movimiento confirmado; el `variable` genera uno `pendiente` sin monto. `generar_recurrentes()` corre por pg_cron a las 09:00 UTC, es idempotente por `ultimo_generado` y ajusta el día al último del mes. Si un recurrente se crea con el día ya pasado, arranca el mes siguiente (trigger).
-- **Pendientes:** no suman en los totales. `registrar_movimiento` confirma automáticamente el pendiente de la misma categoría del mes (salvo `forzar_nuevo`).
+- **Sin recurrentes, pendientes ni medio de pago:** se sacaron a propósito en la migración `20261019000001_simplificacion.sql` (no se usaban). Todo movimiento tiene monto y suma en los totales.
 - **Fechas** siempre en `America/Argentina/Cordoba`.
 
 ## Seguridad

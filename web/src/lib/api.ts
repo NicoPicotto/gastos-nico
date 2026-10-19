@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import type { Categoria, Movimiento, MovimientoInput, Recurrente, RecurrenteInput } from './types'
+import type { Categoria, Movimiento, MovimientoInput } from './types'
 
 function check<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
   if (error) throw new Error(error.message)
@@ -52,14 +52,6 @@ export function useMovimientos(desde: string, hasta: string) {
   })
 }
 
-export function usePendientes() {
-  return useQuery({
-    queryKey: ['movimientos', 'pendientes'],
-    queryFn: async (): Promise<Movimiento[]> =>
-      check(await supabase.from('movimientos_v').select('*').eq('estado', 'pendiente').order('fecha')),
-  })
-}
-
 export function useCotizacion() {
   return useQuery({
     queryKey: ['cotizacion'],
@@ -72,14 +64,6 @@ export function useCotizacion() {
           .limit(1)
           .maybeSingle(),
       ),
-  })
-}
-
-export function useRecurrentes() {
-  return useQuery({
-    queryKey: ['recurrentes'],
-    queryFn: async (): Promise<Recurrente[]> =>
-      check(await supabase.from('recurrentes').select('*').order('dia_del_mes')),
   })
 }
 
@@ -103,7 +87,7 @@ export function useGuardarMovimiento() {
   return useMutation({
     mutationFn: async ({ id, input }: { id?: number; input: MovimientoInput }) => {
       const row = { ...input, cotizacion_mep: await cotizacionParaGuardar(input.moneda) }
-      if (id) check(await supabase.from('movimientos').update({ ...row, estado: 'confirmado' }).eq('id', id))
+      if (id) check(await supabase.from('movimientos').update(row).eq('id', id))
       else check(await supabase.from('movimientos').insert({ ...row, origen: 'web' }))
     },
     onSuccess: invalidar,
@@ -115,27 +99,6 @@ export function useBorrarMovimiento() {
   return useMutation({
     mutationFn: async (id: number) => {
       check(await supabase.from('movimientos').delete().eq('id', id))
-    },
-    onSuccess: invalidar,
-  })
-}
-
-export function useGuardarRecurrente() {
-  const invalidar = useInvalidar('recurrentes')
-  return useMutation({
-    mutationFn: async ({ id, input }: { id?: number; input: Partial<RecurrenteInput> & { activo?: boolean } }) => {
-      if (id) check(await supabase.from('recurrentes').update(input).eq('id', id))
-      else check(await supabase.from('recurrentes').insert(input))
-    },
-    onSuccess: invalidar,
-  })
-}
-
-export function useBorrarRecurrente() {
-  const invalidar = useInvalidar('recurrentes')
-  return useMutation({
-    mutationFn: async (id: number) => {
-      check(await supabase.from('recurrentes').delete().eq('id', id))
     },
     onSuccess: invalidar,
   })

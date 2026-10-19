@@ -3,15 +3,13 @@ import { useCotizacion } from '../lib/api'
 import { mesActual, nombreMes, sumarMeses, type Vista } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import { Movimientos } from './Movimientos'
-import { Recurrentes } from './Recurrentes'
 import { Resumen } from './Resumen'
 
-type Tab = 'resumen' | 'movimientos' | 'recurrentes'
+type Tab = 'resumen' | 'movimientos'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'movimientos', label: 'Movimientos' },
-  { id: 'recurrentes', label: 'Recurrentes' },
 ]
 
 export function Dashboard() {
@@ -40,43 +38,40 @@ export function Dashboard() {
         </button>
       </header>
 
-      {tab !== 'recurrentes' && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1">
-            <button className="btn-ghost px-2" aria-label="Mes anterior" onClick={() => setMes(sumarMeses(mes, -1))}>
-              ‹
-            </button>
-            <h1 className="min-w-44 text-center text-lg font-semibold">{nombreMes(mes)}</h1>
-            <button
-              className="btn-ghost px-2"
-              aria-label="Mes siguiente"
-              disabled={mes >= mesActual()}
-              onClick={() => setMes(sumarMeses(mes, 1))}
-            >
-              ›
-            </button>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            {mep && <span className="text-muted tabular">MEP ${mep.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>}
-            <div className="flex rounded-lg bg-surface-2 p-0.5">
-              {(['ARS', 'USD'] as const).map((v) => (
-                <button
-                  key={v}
-                  disabled={v === 'USD' && !mep}
-                  onClick={() => setVista(v)}
-                  className={`btn px-2.5 py-1 ${vista === v ? 'bg-surface text-ink shadow-sm' : 'text-ink-2'}`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1">
+          <button className="btn-ghost px-2" aria-label="Mes anterior" onClick={() => setMes(sumarMeses(mes, -1))}>
+            ‹
+          </button>
+          <h1 className="min-w-44 text-center text-lg font-semibold">{nombreMes(mes)}</h1>
+          <button
+            className="btn-ghost px-2"
+            aria-label="Mes siguiente"
+            disabled={mes >= mesActual()}
+            onClick={() => setMes(sumarMeses(mes, 1))}
+          >
+            ›
+          </button>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          {mep && <span className="text-muted tabular">MEP ${mep.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>}
+          <div className="flex rounded-lg bg-surface-2 p-0.5">
+            {(['ARS', 'USD'] as const).map((v) => (
+              <button
+                key={v}
+                disabled={v === 'USD' && !mep}
+                onClick={() => setVista(v)}
+                className={`btn px-2.5 py-1 ${vista === v ? 'bg-surface text-ink shadow-sm' : 'text-ink-2'}`}
+              >
+                {v}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
       {tab === 'resumen' && <Resumen mes={mes} vista={vista} mep={mep} />}
       {tab === 'movimientos' && <Movimientos mes={mes} />}
-      {tab === 'recurrentes' && <Recurrentes />}
     </div>
   )
 }

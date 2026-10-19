@@ -6,10 +6,10 @@ App personal de gastos e ingresos. Los movimientos se cargan hablándole a Claud
 Claude app (celu) ──HTTP──> Edge Function /mcp/<token> ──> Postgres (Supabase)
                                                               ▲
 Dashboard (Vite+React, Vercel) ── supabase-js + Auth (RLS) ───┘
-pg_cron ──> fx-refresh (cotización MEP) · generar_recurrentes()
+pg_cron ──> fx-refresh (cotización MEP)
 ```
 
-- `supabase/migrations/`: esquema, categorías fijas, recurrentes y jobs de cron
+- `supabase/migrations/`: esquema, categorías fijas, jobs de cron y cambios posteriores
 - `supabase/functions/mcp/`: servidor MCP (tools en `tools.ts`)
 - `supabase/functions/fx-refresh/`: guarda la cotización MEP de dolarapi.com
 - `web/`: dashboard
@@ -19,7 +19,6 @@ pg_cron ──> fx-refresh (cotización MEP) · generar_recurrentes()
 - **Categorías fijas**: viven en la migración `..._categorias.sql`. Para cambiarlas, agregá una migración nueva.
 - **Tarjeta de crédito**: solo se carga el pago del resumen (categoría *Tarjeta crédito*). Las compras con crédito no se registran sueltas.
 - **USD**: cada movimiento congela la cotización MEP del momento de la carga (`cotizacion_mep`) y `monto_ars` se calcula a partir de ella.
-- **Recurrentes**: un *fijo* se carga solo el día indicado. Un *variable* (luz, gas, resumen) crea un movimiento **pendiente**, que no suma en los totales hasta que se confirma el monto. Si al registrar un gasto hay un pendiente de esa categoría en el mes, el MCP lo confirma en lugar de duplicarlo.
 
 ## Desarrollo local
 
@@ -47,7 +46,7 @@ MCP local: `http://127.0.0.1:54321/functions/v1/mcp/token-local` (probalo con `n
 
 ### 1. Supabase
 
-**Base de datos**: en el SQL Editor del dashboard, pegá y ejecutá en orden los archivos de `supabase/migrations/` (01 → 04). Para el 04 (cron) antes hay que activar las extensiones **pg_cron** y **pg_net** en *Database → Extensions*.
+**Base de datos**: en el SQL Editor del dashboard, pegá y ejecutá en orden los archivos de `supabase/migrations/` (en orden de nombre). Para el 04 (cron) antes hay que activar las extensiones **pg_cron** y **pg_net** en *Database → Extensions*.
 
 **Edge Functions** (se suben con la CLI, sin Docker):
 
@@ -94,4 +93,3 @@ Importá el repo con **Root Directory** `web` (Vite se detecta solo) y configur�
 | Job | Horario | Qué hace |
 |---|---|---|
 | `fx-refresh` | 08:45 y 21:00 (05:45 y 18:00 ART) | Guarda la cotización MEP del día |
-| `generar-recurrentes` | 09:00 (06:00 ART) | Genera los recurrentes del día (idempotente) |
