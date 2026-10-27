@@ -1,14 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { useMovimientos } from '../lib/api'
+import { useMepPorMes, useMovimientos } from '../lib/api'
 import {
   colorSlot,
-  fmtCompacto,
   fmtFecha,
   fmtTotal,
+  fmtValor,
+  fmtValorCompacto,
+  hoyAR,
+  mesActual,
   nombreMes,
   sumarMeses,
   ultimoDia,
+  valorEnVista,
   type Vista,
 } from '../lib/format'
 import type { Movimiento } from '../lib/types'
@@ -24,23 +28,31 @@ const sumar = (ms: Movimiento[]) => ms.reduce((s, m) => s + Number(m.monto_ars),
 export function Resumen({ mes, vista, mep }: Props) {
   const desde = `${sumarMeses(mes, -11)}-01`
   const { data: movs = [], isLoading } = useMovimientos(desde, ultimoDia(mes))
+  const { data: mepPorMes } = useMepPorMes(desde, ultimoDia(mes))
   const fmt = (n: number) => fmtTotal(n, vista, mep)
 
   const datos = useMemo(() => {
     const delMes = (m: string) => movs.filter((x) => x.fecha.startsWith(m))
     const actual = delMes(mes)
-    const anterior = delMes(sumarMeses(mes, -1))
+    // Con el mes en curso se compara contra el mismo tramo del mes anterior
+    // (del 1 al día de hoy), no contra el mes anterior completo.
+    const mesAnterior = sumarMeses(mes, -1)
+    const enCurso = mes === mesActual()
+    const corte = enCurso ? `${mesAnterior}-${hoyAR().slice(8)}` : ultimoDia(mesAnterior)
+    const anterior = delMes(mesAnterior).filter((m) => m.fecha <= corte)
     const gastos = actual.filter((m) => m.tipo === 'gasto')
     const ingresos = actual.filter((m) => m.tipo === 'ingreso')
 
+    // En USD cada mes se convierte con su propio MEP promedio.
     const evolucion = Array.from({ length: 12 }, (_, i) => {
       const m = sumarMeses(mes, i - 11)
       const del = delMes(m)
+      const total = (ms: Movimiento[]) => ms.reduce((s, x) => s + valorEnVista(x, vista, mepPorMes?.get(m) ?? mep), 0)
       return {
         mes: m,
         label: nombreMes(m, true),
-        ingresos: sumar(del.filter((x) => x.tipo === 'ingreso')),
-        gastos: sumar(del.filter((x) => x.tipo === 'gasto')),
+        ingresos: total(del.filter((x) => x.tipo === 'ingreso')),
+        gastos: total(del.filter((x) => x.tipo === 'gasto')),
       }
     })
 
@@ -49,10 +61,11 @@ export function Resumen({ mes, vista, mep }: Props) {
       totalGastos: sumar(gastos),
       totalIngresos: sumar(ingresos),
       gastosAnterior: sumar(anterior.filter((m) => m.tipo === 'gasto')),
+      notaVariacion: enCurso ? `vs mismo período de ${nombreMes(mesAnterior, true)}` : 'vs mes anterior',
       evolucion,
       top: [...gastos].sort((a, b) => Number(b.monto_ars) - Number(a.monto_ars)).slice(0, 5),
     }
-  }, [movs, mes])
+  }, [movs, mes, vista, mep, mepPorMes])
 
   if (isLoading) return <p className="text-ink-2">Cargando…</p>
 
@@ -68,7 +81,7 @@ export function Resumen({ mes, vista, mep }: Props) {
           valor={fmt(datos.totalGastos)}
           nota={
             variacion != null
-              ? `${variacion > 0 ? '▲' : '▼'} ${Math.abs(Math.round(variacion))}% vs mes anterior`
+              ? `${variacion > 0 ? '▲' : '▼'} ${Math.abs(Math.round(variacion))}% ${datos.notaVariacion}`
               : undefined
           }
         />
@@ -105,13 +118,13 @@ export function Resumen({ mes, vista, mep }: Props) {
       </div>
 
       <section className="card">
-        <Evolucion datos={datos.evolucion} vista={vista} mep={mep} fmt={fmt} />
+        <Evolucion datos={datos.evolucion} vista={vista} />
       </section>
     </div>
   )
 }
 
-function Kpi({ label, valor, nota, tono }: { label: string; valor: string; nota?: string; tono?: 'bad' }) {
+export function Kpi({ label, valor, nota, tono }: { label: string; valor: string; nota?: string; tono?: 'bad' }) {
   return (
     <div className="card">
       <p className="text-sm text-ink-2">{label}</p>
@@ -191,23 +204,17 @@ interface PuntoEvolucion {
   gastos: number
 }
 
-function Evolucion({
-  datos,
-  vista,
-  mep,
-  fmt,
-}: {
-  datos: PuntoEvolucion[]
-  vista: Vista
-  mep: number | null
-  fmt: (n: number) => string
-}) {
+function Evolucion({ datos, vista }: { datos: PuntoEvolucion[]; vista: Vista }) {
   const [tabla, setTabla] = useState(false)
+  const fmt = (n: number) => fmtValor(n, vista)
 
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-semibold">Ingresos vs gastos · últimos 12 meses</h2>
+        <div>
+          <h2 className="font-semibold">Ingresos vs gastos · últimos 12 meses</h2>
+          {vista === 'USD' && <p className="text-xs text-muted">USD al MEP de cada mes</p>}
+        </div>
         <button className="btn-ghost shrink-0 whitespace-nowrap px-2 py-1 text-xs" onClick={() => setTabla(!tabla)}>
           {tabla ? 'Ver gráfico' : 'Ver tabla'}
         </button>
@@ -248,7 +255,7 @@ function Evolucion({
                 tickLine={false}
                 axisLine={false}
                 tick={{ fill: 'var(--muted)', fontSize: 12 }}
-                tickFormatter={(v: number) => fmtCompacto(v, vista, mep)}
+                tickFormatter={(v: number) => fmtValorCompacto(v, vista)}
               />
               <Tooltip
                 cursor={{ fill: 'var(--surface-2)' }}

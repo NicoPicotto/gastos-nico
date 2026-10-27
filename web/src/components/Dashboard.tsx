@@ -2,19 +2,23 @@ import { useState } from 'react'
 import { useCotizacion } from '../lib/api'
 import { mesActual, nombreMes, sumarMeses, type Vista } from '../lib/format'
 import { supabase } from '../lib/supabase'
+import { Historico } from './Historico'
 import { Movimientos } from './Movimientos'
 import { Resumen } from './Resumen'
 
-type Tab = 'resumen' | 'movimientos'
+type Tab = 'resumen' | 'historico' | 'movimientos'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'resumen', label: 'Resumen' },
+  { id: 'historico', label: 'Histórico' },
   { id: 'movimientos', label: 'Movimientos' },
 ]
 
 export function Dashboard() {
   const [tab, setTab] = useState<Tab>('resumen')
   const [mes, setMes] = useState(mesActual())
+  const añoActual = Number(mesActual().slice(0, 4))
+  const [año, setAño] = useState(añoActual)
   const [vista, setVista] = useState<Vista>('ARS')
   const { data: cotizacion } = useCotizacion()
   const mep = cotizacion ? Number(cotizacion.mep_venta) : null
@@ -39,20 +43,37 @@ export function Dashboard() {
       </header>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1">
-          <button className="btn-ghost px-2" aria-label="Mes anterior" onClick={() => setMes(sumarMeses(mes, -1))}>
-            ‹
-          </button>
-          <h1 className="min-w-44 text-center text-lg font-semibold">{nombreMes(mes)}</h1>
-          <button
-            className="btn-ghost px-2"
-            aria-label="Mes siguiente"
-            disabled={mes >= mesActual()}
-            onClick={() => setMes(sumarMeses(mes, 1))}
-          >
-            ›
-          </button>
-        </div>
+        {tab === 'historico' ? (
+          <div className="flex items-center gap-1">
+            <button className="btn-ghost px-2" aria-label="Año anterior" onClick={() => setAño(año - 1)}>
+              ‹
+            </button>
+            <h1 className="min-w-44 text-center text-lg font-semibold">{año}</h1>
+            <button
+              className="btn-ghost px-2"
+              aria-label="Año siguiente"
+              disabled={año >= añoActual}
+              onClick={() => setAño(año + 1)}
+            >
+              ›
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <button className="btn-ghost px-2" aria-label="Mes anterior" onClick={() => setMes(sumarMeses(mes, -1))}>
+              ‹
+            </button>
+            <h1 className="min-w-44 text-center text-lg font-semibold">{nombreMes(mes)}</h1>
+            <button
+              className="btn-ghost px-2"
+              aria-label="Mes siguiente"
+              disabled={mes >= mesActual()}
+              onClick={() => setMes(sumarMeses(mes, 1))}
+            >
+              ›
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-3 text-sm">
           {mep && <span className="text-muted tabular">MEP ${mep.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>}
           <div className="flex rounded-lg bg-surface-2 p-0.5">
@@ -71,6 +92,7 @@ export function Dashboard() {
       </div>
 
       {tab === 'resumen' && <Resumen mes={mes} vista={vista} mep={mep} />}
+      {tab === 'historico' && <Historico año={año} vista={vista} mep={mep} />}
       {tab === 'movimientos' && <Movimientos mes={mes} />}
     </div>
   )

@@ -36,19 +36,47 @@ export function useCategorias() {
   })
 }
 
+// PostgREST corta cada respuesta en max_rows (1000): se pide por páginas.
+const PAGINA = 1000
+
 export function useMovimientos(desde: string, hasta: string) {
   return useQuery({
     queryKey: ['movimientos', desde, hasta],
-    queryFn: async (): Promise<Movimiento[]> =>
-      check(
-        await supabase
-          .from('movimientos_v')
-          .select('*')
-          .gte('fecha', desde)
-          .lte('fecha', hasta)
-          .order('fecha', { ascending: false })
-          .order('id', { ascending: false }),
-      ),
+    queryFn: async (): Promise<Movimiento[]> => {
+      const todos: Movimiento[] = []
+      for (let from = 0; ; from += PAGINA) {
+        const pagina = check<Movimiento[]>(
+          await supabase
+            .from('movimientos_v')
+            .select('*')
+            .gte('fecha', desde)
+            .lte('fecha', hasta)
+            .order('fecha', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, from + PAGINA - 1),
+        )
+        todos.push(...pagina)
+        if (pagina.length < PAGINA) return todos
+      }
+    },
+  })
+}
+
+/** MEP promedio de cada mes ('YYYY-MM') dentro del rango. */
+export function useMepPorMes(desde: string, hasta: string) {
+  return useQuery({
+    queryKey: ['cotizaciones', desde, hasta],
+    queryFn: async (): Promise<Map<string, number>> => {
+      const rows = check<{ fecha: string; mep_venta: number }[]>(
+        await supabase.from('cotizaciones').select('fecha, mep_venta').gte('fecha', desde).lte('fecha', hasta),
+      )
+      return new Map(
+        [...Map.groupBy(rows, (r) => r.fecha.slice(0, 7)).entries()].map(([mes, rs]) => [
+          mes,
+          rs.reduce((s, r) => s + Number(r.mep_venta), 0) / rs.length,
+        ]),
+      )
+    },
   })
 }
 

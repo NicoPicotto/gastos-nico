@@ -13,9 +13,27 @@ export function fmtTotal(montoArs: number, vista: Vista, mep: number | null): st
   return ars.format(montoArs)
 }
 
-export function fmtCompacto(montoArs: number, vista: Vista, mep: number | null): string {
-  const v = vista === 'USD' && mep ? montoArs / mep : montoArs
-  return `${vista === 'USD' ? 'US$' : '$'}${compacto.format(v)}`
+/**
+ * Valor de un movimiento en la vista elegida. En USD usa el MEP del mes del
+ * movimiento (no el de hoy), así los meses viejos no se distorsionan.
+ */
+export function valorEnVista(
+  m: { monto: number; moneda: 'ARS' | 'USD'; monto_ars: number },
+  vista: Vista,
+  mepMes: number | null | undefined,
+): number {
+  if (vista === 'ARS') return Number(m.monto_ars)
+  if (m.moneda === 'USD') return Number(m.monto)
+  return mepMes ? Number(m.monto_ars) / mepMes : 0
+}
+
+/** Formatea un número ya expresado en la moneda de la vista. */
+export function fmtValor(n: number, vista: Vista): string {
+  return (vista === 'USD' ? usd : ars).format(n)
+}
+
+export function fmtValorCompacto(n: number, vista: Vista): string {
+  return `${vista === 'USD' ? 'US$' : '$'}${compacto.format(n)}`
 }
 
 export function fmtMonto(monto: number, moneda: 'ARS' | 'USD'): string {
