@@ -93,6 +93,8 @@ export function registrarTools(server: McpServer, categorias: Categoria[]) {
       "Gastos Hogar: limpieza, ferretería, arreglos, muebles. Gastos Auto: nafta, mecánico, lavado, estacionamiento. " +
       "Esparcimiento: bares, restaurantes, delivery, cine, recitales, salidas, hobbies, streaming. " +
       "Cápitas Logia: cuota o cápita de la logia. " +
+      "Salud: obra social, farmacia, psicóloga, médicos, estudios, odontólogo. " +
+      "Clases: gym, tenis, piano, cuotas de clases o actividades. " +
       "Tarjeta crédito: SOLO el pago del resumen. Otros: únicamente si ninguna otra encaja.",
   );
 
