@@ -7,12 +7,6 @@ const compacto = new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFr
 
 export type Vista = 'ARS' | 'USD'
 
-/** Formatea un total en ARS, o convertido a USD con la cotización indicada. */
-export function fmtTotal(montoArs: number, vista: Vista, mep: number | null): string {
-  if (vista === 'USD' && mep) return usd.format(montoArs / mep)
-  return ars.format(montoArs)
-}
-
 /**
  * Valor de un movimiento en la vista elegida. En USD usa el MEP del mes del
  * movimiento (no el de hoy), así los meses viejos no se distorsionan.

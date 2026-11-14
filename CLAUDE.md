@@ -24,7 +24,7 @@ Proyecto Supabase: `ouddvtxkejykmjskznqf` (región São Paulo).
 
 - **Categorías fijas** (seed en `..._categorias.sql`, agrupadas en `grupos`). No hay ABM: se cambian con una migración nueva. El MCP expone los nombres como `z.enum`, así que Claude no puede inventar categorías.
 - **Tarjeta de crédito:** solo se registra el pago del resumen (categoría "Tarjeta crédito"). Las compras con crédito NO se cargan sueltas.
-- **USD:** cada movimiento congela `cotizacion_mep` al cargarse, y `monto_ars` es una columna generada. Los totales del dashboard suman `monto_ars`; el toggle USD divide por el MEP actual.
+- **USD:** cada movimiento congela `cotizacion_mep` al cargarse, y `monto_ars` es una columna generada. Editar un movimiento (web o MCP) no re-congela la cotización salvo que cambie la moneda. En ARS los totales del dashboard suman `monto_ars`; con el toggle USD cada movimiento se convierte con el MEP promedio de su mes (`valorEnVista` en `web/src/lib/format.ts`) y los cargados en USD cuentan por su monto original.
 - **Sin recurrentes, pendientes ni medio de pago:** se sacaron a propósito en la migración `20261019000001_simplificacion.sql` (no se usaban). Todo movimiento tiene monto y suma en los totales.
 - **Fechas** siempre en `America/Argentina/Cordoba`.
 
@@ -48,3 +48,8 @@ Proyecto Supabase: `ouddvtxkejykmjskznqf` (región São Paulo).
 
 - Colores semánticos como tokens CSS en `web/src/index.css`, con modo claro y oscuro. Las clases propias se definen con `@utility` (Tailwind v4 no permite `@apply` sobre clases comunes).
 - Los gráficos usan la paleta categórica por **slot** (`grupos.color_slot` → `var(--sN)`), validada para daltonismo. Los colores siguen a la entidad, nunca al ranking. Las barras llevan el valor escrito y la evolución mensual tiene vista de tabla, porque algunos colores no llegan a 3:1 de contraste en modo claro.
+
+## Mejoras futuras (ideas, no implementadas)
+
+- **Cada grupo contra su promedio:** en "Gastos por grupo" del Resumen, una rayita sobre cada barra con el promedio de los últimos 6 meses de ese grupo. Sirve en un mes cerrado (qué se fue de mambo) y en el mes en curso (la barra crece hacia la rayita). Opcional: un "▲ 40% vs prom." solo si el desvío es grande. El Resumen ya carga 12 meses, así que no hace falta otra consulta.
+- **Pesos constantes (IPC):** hoy el Histórico muestra, en vista ARS, la variación anual también medida en USD como aproximación. La versión completa sería una tabla `ipc` (índice mensual; migración con sus `grant` y su RLS), cargada por un cron desde alguna API pública a verificar (p. ej. argentinadatos), y un toggle `ARS | ARS de hoy | USD` que exprese todo en pesos de hoy. Ojo: el índice se publica con semanas de demora, así que el mes en curso y el anterior quedarían estimados.

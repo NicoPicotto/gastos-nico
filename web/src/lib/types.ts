@@ -36,3 +36,9 @@ export interface MovimientoInput {
   fecha: string
   descripcion: string | null
 }
+
+/** Filtro de Movimientos que llega desde un gráfico (una categoría, un grupo o un total). */
+export interface FiltroCategorias {
+  etiqueta: string
+  ids: number[]
+}

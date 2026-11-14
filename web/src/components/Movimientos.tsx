@@ -1,28 +1,42 @@
 import { useMemo, useState } from 'react'
-import { useBorrarMovimiento, useMovimientos } from '../lib/api'
-import { colorSlot, fmtArs, fmtFecha, fmtMonto, ultimoDia } from '../lib/format'
-import type { Movimiento } from '../lib/types'
+import { useBorrarMovimiento, useMepPorMes, useMovimientos } from '../lib/api'
+import { colorSlot, fmtArs, fmtFecha, fmtMonto, fmtValor, ultimoDia, valorEnVista, type Vista } from '../lib/format'
+import type { FiltroCategorias, Movimiento } from '../lib/types'
 import { MovimientoForm } from './MovimientoForm'
 
 const ORIGEN: Record<Movimiento['origen'], string> = { mcp: 'Claude', web: 'Web', cron: 'Auto' }
 
-export function Movimientos({ mes }: { mes: string }) {
+/** Minúsculas y sin acentos, para que "credito" encuentre "Tarjeta crédito". */
+const normalizar = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+
+interface Props {
+  mes: string
+  vista: Vista
+  mep: number | null
+  filtro: FiltroCategorias | null
+  onQuitarFiltro: () => void
+}
+
+export function Movimientos({ mes, vista, mep, filtro: filtroCats, onQuitarFiltro }: Props) {
   const { data: movs = [], isLoading } = useMovimientos(`${mes}-01`, ultimoDia(mes))
+  const { data: mepPorMes } = useMepPorMes(`${mes}-01`, ultimoDia(mes))
   const borrar = useBorrarMovimiento()
   const [editando, setEditando] = useState<Movimiento | 'nuevo' | null>(null)
   const [filtro, setFiltro] = useState('')
   const [tipo, setTipo] = useState<'todos' | 'gasto' | 'ingreso'>('todos')
 
   const visibles = useMemo(() => {
-    const q = filtro.trim().toLowerCase()
+    const q = normalizar(filtro.trim())
     return movs.filter(
       (m) =>
         (tipo === 'todos' || m.tipo === tipo) &&
-        (!q || [m.categoria, m.grupo, m.descripcion ?? ''].some((s) => s.toLowerCase().includes(q))),
+        (!filtroCats || filtroCats.ids.includes(m.categoria_id)) &&
+        (!q || [m.categoria, m.grupo, m.descripcion ?? ''].some((s) => normalizar(s).includes(q))),
     )
-  }, [movs, filtro, tipo])
+  }, [movs, filtro, tipo, filtroCats])
 
-  const total = visibles.reduce((s, m) => s + (m.tipo === 'ingreso' ? 1 : -1) * Number(m.monto_ars), 0)
+  const mepMes = mepPorMes?.get(mes) ?? mep
+  const total = visibles.reduce((s, m) => s + (m.tipo === 'ingreso' ? 1 : -1) * valorEnVista(m, vista, mepMes), 0)
 
   return (
     <div className="space-y-4">
@@ -38,6 +52,14 @@ export function Movimientos({ mes }: { mes: string }) {
           <option value="gasto">Gastos</option>
           <option value="ingreso">Ingresos</option>
         </select>
+        {filtroCats && (
+          <span className="flex items-center gap-1 rounded-lg bg-surface-2 py-1 pr-1 pl-2.5 text-sm">
+            {filtroCats.etiqueta}
+            <button className="btn-ghost px-1.5 py-0.5 text-xs" aria-label="Quitar filtro" onClick={onQuitarFiltro}>
+              ✕
+            </button>
+          </span>
+        )}
         <button className="btn-primary ml-auto" onClick={() => setEditando('nuevo')}>
           + Nuevo
         </button>
@@ -110,7 +132,7 @@ export function Movimientos({ mes }: { mes: string }) {
                   {visibles.length} movimientos · balance
                 </td>
                 <td className={`tabular px-4 py-2 text-right font-medium ${total < 0 ? 'text-bad' : 'text-good'}`}>
-                  {fmtArs(total)}
+                  {fmtValor(total, vista)}
                 </td>
                 <td />
               </tr>

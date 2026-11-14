@@ -24,6 +24,7 @@ export function MovimientoForm({ movimiento, onDone }: Props) {
     guardar.mutate(
       {
         id: movimiento?.id,
+        monedaAnterior: movimiento?.moneda,
         input: {
           categoria_id: categoriaId,
           monto: Number(monto),

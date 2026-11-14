@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import type { Categoria, Movimiento, MovimientoInput } from './types'
+import type { Categoria, Moneda, Movimiento, MovimientoInput } from './types'
 
 function check<T>({ data, error }: { data: T | null; error: { message: string } | null }): T {
   if (error) throw new Error(error.message)
@@ -113,10 +113,15 @@ function useInvalidar(...keys: string[]) {
 export function useGuardarMovimiento() {
   const invalidar = useInvalidar('movimientos')
   return useMutation({
-    mutationFn: async ({ id, input }: { id?: number; input: MovimientoInput }) => {
-      const row = { ...input, cotizacion_mep: await cotizacionParaGuardar(input.moneda) }
-      if (id) check(await supabase.from('movimientos').update(row).eq('id', id))
-      else check(await supabase.from('movimientos').insert({ ...row, origen: 'web' }))
+    mutationFn: async ({ id, monedaAnterior, input }: { id?: number; monedaAnterior?: Moneda; input: MovimientoInput }) => {
+      if (id) {
+        // Al editar se conserva la cotización congelada; solo se recalcula si cambia la moneda.
+        const row = input.moneda === monedaAnterior ? input : { ...input, cotizacion_mep: await cotizacionParaGuardar(input.moneda) }
+        check(await supabase.from('movimientos').update(row).eq('id', id))
+      } else {
+        const row = { ...input, cotizacion_mep: await cotizacionParaGuardar(input.moneda), origen: 'web' as const }
+        check(await supabase.from('movimientos').insert(row))
+      }
     },
     onSuccess: invalidar,
   })

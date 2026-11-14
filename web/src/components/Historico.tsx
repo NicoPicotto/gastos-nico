@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts'
 import { useCategorias, useMepPorMes, useMovimientos } from '../lib/api'
 import { colorSlot, fmtValor, fmtValorCompacto, hoyAR, mesActual, nombreMes, valorEnVista, type Vista } from '../lib/format'
-import type { Categoria, Movimiento } from '../lib/types'
+import type { Categoria, FiltroCategorias, Movimiento } from '../lib/types'
 import { Kpi } from './Resumen'
 
 interface Props {
   año: number
   vista: Vista
   mep: number | null
+  verMovimientos: (mes: string, filtro: FiltroCategorias) => void
 }
 
 interface Fila {
@@ -17,12 +18,14 @@ interface Fila {
   nivel: 'grupo' | 'categoria' | 'total'
   color: string
   valores: number[]
+  /** Categorías que suma la fila (para ver sus movimientos). */
+  ids: number[]
 }
 
 const sumaArr = (xs: number[]) => xs.reduce((s, x) => s + x, 0)
 const sumarFilas = (filas: number[][]) => Array.from({ length: 12 }, (_, i) => sumaArr(filas.map((f) => f[i])))
 
-export function Historico({ año, vista, mep }: Props) {
+export function Historico({ año, vista, mep, verMovimientos }: Props) {
   const desde = `${año - 1}-01-01`
   const hasta = `${año}-12-31`
   const { data: movs = [], isLoading } = useMovimientos(desde, hasta)
@@ -36,18 +39,28 @@ export function Historico({ año, vista, mep }: Props) {
   const transcurridos = meses.filter((m) => m <= actual).length
 
   const datos = useMemo(() => {
-    const valor = (m: Movimiento) => valorEnVista(m, vista, mepPorMes?.get(m.fecha.slice(0, 7)) ?? mep)
-    const total = (ms: Movimiento[]) => ms.reduce((s, m) => s + valor(m), 0)
+    const valorEn = (v: Vista) => (m: Movimiento) => valorEnVista(m, v, mepPorMes?.get(m.fecha.slice(0, 7)) ?? mep)
+    const valor = valorEn(vista)
+    const total = (ms: Movimiento[], val = valor) => ms.reduce((s, m) => s + val(m), 0)
 
     // Acumulado del año, contra el mismo tramo del año anterior.
     const corte = String(año) === actual.slice(0, 4) ? hoyAR() : `${año}-12-31`
     const delAño = movs.filter((m) => m.fecha.startsWith(String(año)) && m.fecha <= corte)
     const delAnterior = movs.filter((m) => m.fecha.startsWith(String(año - 1)))
     const tramoAnterior = delAnterior.filter((m) => m.fecha <= `${año - 1}${corte.slice(4)}`)
-    const acumulado = (ms: Movimiento[]) => ({
-      gastos: total(ms.filter((m) => m.tipo === 'gasto')),
-      ingresos: total(ms.filter((m) => m.tipo === 'ingreso')),
+    const acumulado = (ms: Movimiento[], val = valor) => ({
+      gastos: total(ms.filter((m) => m.tipo === 'gasto'), val),
+      ingresos: total(ms.filter((m) => m.tipo === 'ingreso'), val),
     })
+    // En ARS la variación anual es casi toda inflación: se muestra también
+    // medida en USD, pero solo si todos los meses tienen su MEP (si no, se
+    // usaría el de hoy y la comparación engañaría).
+    const conMep = (ms: Movimiento[]) => ms.every((m) => m.moneda === 'USD' || mepPorMes?.has(m.fecha.slice(0, 7)))
+    const usd = valorEn('USD')
+    const enUsd =
+      vista === 'ARS' && tramoAnterior.length > 0 && conMep(delAño) && conMep(tramoAnterior)
+        ? { actual: acumulado(delAño, usd), anterior: acumulado(tramoAnterior, usd) }
+        : null
 
     // Matriz categoría × mes.
     const porCat = new Map<number, number[]>()
@@ -68,7 +81,7 @@ export function Historico({ año, vista, mep }: Props) {
         const color = colorSlot(g.color_slot)
         // Un grupo de una sola categoría se muestra como una única fila.
         if (delGrupo.length === 1) {
-          filas.push({ id: `c${g.id}`, nombre: g.nombre, nivel: 'grupo', color, valores: valoresCat(g) })
+          filas.push({ id: `c${g.id}`, nombre: g.nombre, nivel: 'grupo', color, valores: valoresCat(g), ids: [g.id] })
           continue
         }
         filas.push({
@@ -77,12 +90,13 @@ export function Historico({ año, vista, mep }: Props) {
           nivel: 'grupo',
           color,
           valores: sumarFilas(delGrupo.map(valoresCat)),
+          ids: delGrupo.map((c) => c.id),
         })
         for (const c of delGrupo) {
-          filas.push({ id: `c${c.id}`, nombre: c.nombre, nivel: 'categoria', color, valores: valoresCat(c) })
+          filas.push({ id: `c${c.id}`, nombre: c.nombre, nivel: 'categoria', color, valores: valoresCat(c), ids: [c.id] })
         }
       }
-      return { filas, total: sumarFilas(cats.map(valoresCat)) }
+      return { filas, total: sumarFilas(cats.map(valoresCat)), ids: cats.map((c) => c.id) }
     }
 
     const gastos = bloque('gasto')
@@ -93,6 +107,7 @@ export function Historico({ año, vista, mep }: Props) {
       nivel: 'total',
       color: 'var(--s-gasto)',
       valores: gastos.total,
+      ids: gastos.ids,
     }
     const totalIngresos: Fila = {
       id: 'total-ingresos',
@@ -100,6 +115,7 @@ export function Historico({ año, vista, mep }: Props) {
       nivel: 'total',
       color: 'var(--s-ingreso)',
       valores: ingresos.total,
+      ids: ingresos.ids,
     }
     const balance: Fila = {
       id: 'balance',
@@ -107,11 +123,13 @@ export function Historico({ año, vista, mep }: Props) {
       nivel: 'total',
       color: 'var(--s-neutral)',
       valores: ingresos.total.map((v, i) => v - gastos.total[i]),
+      ids: [...gastos.ids, ...ingresos.ids],
     }
 
     return {
       acumulado: acumulado(delAño),
       anterior: delAnterior.length > 0 ? acumulado(tramoAnterior) : null,
+      enUsd,
       secciones: [
         { titulo: 'Gastos', filas: [...gastos.filas, totalGastos] },
         { titulo: 'Ingresos', filas: [...ingresos.filas, totalIngresos] },
@@ -123,11 +141,24 @@ export function Historico({ año, vista, mep }: Props) {
   if (isLoading || cargandoCats) return <p className="text-ink-2">Cargando…</p>
 
   const fmt = (n: number) => fmtValor(n, vista)
-  const { acumulado, anterior } = datos
+  const { acumulado, anterior, enUsd } = datos
   const balance = acumulado.ingresos - acumulado.gastos
   const ahorro = acumulado.ingresos > 0 ? Math.round((balance / acumulado.ingresos) * 100) : null
-  const nota = (actualV: number, previo: number | undefined) =>
-    previo ? `${actualV >= previo ? '▲' : '▼'} ${Math.abs(Math.round((actualV / previo - 1) * 100))}% vs mismo período ${año - 1}` : undefined
+  const variacion = (actualV: number, previo: number | undefined) =>
+    previo ? `${actualV >= previo ? '▲' : '▼'} ${Math.abs(Math.round((actualV / previo - 1) * 100))}%` : null
+  const nota = (clave: 'gastos' | 'ingresos') => {
+    const v = variacion(acumulado[clave], anterior?.[clave])
+    if (!v) return undefined
+    const vUsd = enUsd && variacion(enUsd.actual[clave], enUsd.anterior[clave])
+    return (
+      <>
+        <p>
+          {v} vs mismo período {año - 1}
+        </p>
+        {vUsd && <p>en USD {vUsd}</p>}
+      </>
+    )
+  }
 
   const filas = datos.secciones.flatMap((s) => s.filas)
   const elegida = filas.find((f) => f.id === seleccion) ?? filas.find((f) => f.id === 'total-gastos')!
@@ -135,14 +166,20 @@ export function Historico({ año, vista, mep }: Props) {
   return (
     <div className="space-y-4">
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label={`Gastos ${año}`} valor={fmt(acumulado.gastos)} nota={nota(acumulado.gastos, anterior?.gastos)} />
-        <Kpi label={`Ingresos ${año}`} valor={fmt(acumulado.ingresos)} nota={nota(acumulado.ingresos, anterior?.ingresos)} />
+        <Kpi label={`Gastos ${año}`} valor={fmt(acumulado.gastos)} nota={nota('gastos')} />
+        <Kpi label={`Ingresos ${año}`} valor={fmt(acumulado.ingresos)} nota={nota('ingresos')} />
         <Kpi label="Balance" valor={fmt(balance)} tono={balance < 0 ? 'bad' : undefined} />
         <Kpi label="Ahorro" valor={ahorro != null ? `${ahorro}%` : '—'} tono={ahorro != null && ahorro < 0 ? 'bad' : undefined} />
       </section>
 
       <section className="card">
-        <Detalle fila={elegida} meses={meses} transcurridos={transcurridos} vista={vista} />
+        <Detalle
+          fila={elegida}
+          meses={meses}
+          transcurridos={transcurridos}
+          vista={vista}
+          onMes={(m) => verMovimientos(m, { etiqueta: elegida.nombre, ids: elegida.ids })}
+        />
       </section>
 
       <section className="card">
@@ -222,11 +259,13 @@ function Detalle({
   meses,
   transcurridos,
   vista,
+  onMes,
 }: {
   fila: Fila
   meses: string[]
   transcurridos: number
   vista: Vista
+  onMes: (mes: string) => void
 }) {
   const puntos = meses.map((m, i) => ({ mes: m, label: nombreMes(m, true), valor: i < transcurridos ? fila.valores[i] : null }))
   const total = sumaArr(fila.valores)
@@ -264,12 +303,22 @@ function Detalle({
                 label={{ value: 'prom.', position: 'insideTopRight', fill: 'var(--ink-2)', fontSize: 11 }}
               />
             )}
-            <Bar dataKey="valor" name={fila.nombre} fill={fila.color} radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false}>
+            <Bar
+              dataKey="valor"
+              name={fila.nombre}
+              fill={fila.color}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={28}
+              isAnimationActive={false}
+              cursor="pointer"
+              onClick={(_, i) => onMes(meses[i])}
+            >
               <LabelList dataKey="valor" position="top" formatter={etiqueta} fill="var(--ink-2)" fontSize={11} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <p className="mt-2 text-xs text-muted">Tocá una barra para ver los movimientos de ese mes.</p>
     </>
   )
 }

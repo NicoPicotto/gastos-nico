@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useMepPorMes, useMovimientos } from '../lib/api'
 import {
   colorSlot,
   fmtFecha,
-  fmtTotal,
   fmtValor,
   fmtValorCompacto,
   hoyAR,
@@ -15,23 +14,32 @@ import {
   valorEnVista,
   type Vista,
 } from '../lib/format'
-import type { Movimiento } from '../lib/types'
+import type { FiltroCategorias, Movimiento } from '../lib/types'
 
 interface Props {
   mes: string
   vista: Vista
   mep: number | null
+  verMovimientos: (mes: string, filtro: FiltroCategorias) => void
 }
 
-const sumar = (ms: Movimiento[]) => ms.reduce((s, m) => s + Number(m.monto_ars), 0)
+type Valor = (m: Movimiento) => number
 
-export function Resumen({ mes, vista, mep }: Props) {
+const sumar = (ms: Movimiento[], valor: Valor) => ms.reduce((s, m) => s + valor(m), 0)
+
+export function Resumen({ mes, vista, mep, verMovimientos }: Props) {
   const desde = `${sumarMeses(mes, -11)}-01`
   const { data: movs = [], isLoading } = useMovimientos(desde, ultimoDia(mes))
   const { data: mepPorMes } = useMepPorMes(desde, ultimoDia(mes))
-  const fmt = (n: number) => fmtTotal(n, vista, mep)
+  const fmt = (n: number) => fmtValor(n, vista)
 
   const datos = useMemo(() => {
+    // En USD cada movimiento se convierte con el MEP promedio de su mes
+    // (mismo criterio que la evolución y el Histórico).
+    const valorDe =
+      (m: string): Valor =>
+      (x) =>
+        valorEnVista(x, vista, mepPorMes?.get(m) ?? mep)
     const delMes = (m: string) => movs.filter((x) => x.fecha.startsWith(m))
     const actual = delMes(mes)
     // Con el mes en curso se compara contra el mismo tramo del mes anterior
@@ -42,28 +50,28 @@ export function Resumen({ mes, vista, mep }: Props) {
     const anterior = delMes(mesAnterior).filter((m) => m.fecha <= corte)
     const gastos = actual.filter((m) => m.tipo === 'gasto')
     const ingresos = actual.filter((m) => m.tipo === 'ingreso')
+    const valor = valorDe(mes)
 
-    // En USD cada mes se convierte con su propio MEP promedio.
     const evolucion = Array.from({ length: 12 }, (_, i) => {
       const m = sumarMeses(mes, i - 11)
       const del = delMes(m)
-      const total = (ms: Movimiento[]) => ms.reduce((s, x) => s + valorEnVista(x, vista, mepPorMes?.get(m) ?? mep), 0)
       return {
         mes: m,
         label: nombreMes(m, true),
-        ingresos: total(del.filter((x) => x.tipo === 'ingreso')),
-        gastos: total(del.filter((x) => x.tipo === 'gasto')),
+        ingresos: sumar(del.filter((x) => x.tipo === 'ingreso'), valorDe(m)),
+        gastos: sumar(del.filter((x) => x.tipo === 'gasto'), valorDe(m)),
       }
     })
 
     return {
+      valor,
       gastos,
-      totalGastos: sumar(gastos),
-      totalIngresos: sumar(ingresos),
-      gastosAnterior: sumar(anterior.filter((m) => m.tipo === 'gasto')),
+      totalGastos: sumar(gastos, valor),
+      totalIngresos: sumar(ingresos, valor),
+      gastosAnterior: sumar(anterior.filter((m) => m.tipo === 'gasto'), valorDe(mesAnterior)),
       notaVariacion: enCurso ? `vs mismo período de ${nombreMes(mesAnterior, true)}` : 'vs mes anterior',
       evolucion,
-      top: [...gastos].sort((a, b) => Number(b.monto_ars) - Number(a.monto_ars)).slice(0, 5),
+      top: [...gastos].sort((a, b) => valor(b) - valor(a)).slice(0, 5),
     }
   }, [movs, mes, vista, mep, mepPorMes])
 
@@ -96,7 +104,13 @@ export function Resumen({ mes, vista, mep }: Props) {
 
       <div className="grid gap-4 lg:grid-cols-5">
         <section className="card lg:col-span-3">
-          <GastosPorGrupo gastos={datos.gastos} total={datos.totalGastos} fmt={fmt} />
+          <GastosPorGrupo
+            gastos={datos.gastos}
+            total={datos.totalGastos}
+            valor={datos.valor}
+            fmt={fmt}
+            verMovimientos={(f) => verMovimientos(mes, f)}
+          />
         </section>
         <section className="card lg:col-span-2">
           <h2 className="mb-3 font-semibold">Gastos más grandes</h2>
@@ -110,7 +124,7 @@ export function Resumen({ mes, vista, mep }: Props) {
                     {fmtFecha(m.fecha)} · {m.categoria}
                   </p>
                 </div>
-                <span className="tabular shrink-0 font-medium">{fmt(Number(m.monto_ars))}</span>
+                <span className="tabular shrink-0 font-medium">{fmt(datos.valor(m))}</span>
               </li>
             ))}
           </ul>
@@ -124,28 +138,48 @@ export function Resumen({ mes, vista, mep }: Props) {
   )
 }
 
-export function Kpi({ label, valor, nota, tono }: { label: string; valor: string; nota?: string; tono?: 'bad' }) {
+export function Kpi({ label, valor, nota, tono }: { label: string; valor: string; nota?: ReactNode; tono?: 'bad' }) {
   return (
     <div className="card">
       <p className="text-sm text-ink-2">{label}</p>
       <p className={`tabular mt-1 text-xl font-semibold sm:text-2xl ${tono === 'bad' ? 'text-bad' : ''}`}>{valor}</p>
-      {nota && <p className="mt-1 text-xs text-muted">{nota}</p>}
+      {nota && <div className="mt-1 text-xs text-muted">{nota}</div>}
     </div>
   )
 }
 
-function GastosPorGrupo({ gastos, total, fmt }: { gastos: Movimiento[]; total: number; fmt: (n: number) => string }) {
+const idsDe = (ms: Movimiento[]) => [...new Set(ms.map((m) => m.categoria_id))]
+
+function GastosPorGrupo({
+  gastos,
+  total,
+  valor,
+  fmt,
+  verMovimientos,
+}: {
+  gastos: Movimiento[]
+  total: number
+  valor: Valor
+  fmt: (n: number) => string
+  verMovimientos: (filtro: FiltroCategorias) => void
+}) {
   const [grupo, setGrupo] = useState<string | null>(null)
 
+  const delGrupo = useMemo(() => (grupo ? gastos.filter((m) => m.grupo === grupo) : gastos), [gastos, grupo])
   const filas = useMemo(() => {
-    const fuente = grupo ? gastos.filter((m) => m.grupo === grupo) : gastos
     const clave = (m: Movimiento) => (grupo ? m.categoria : m.grupo)
-    return [...Map.groupBy(fuente, clave).entries()]
-      .map(([nombre, ms]) => ({ nombre, total: sumar(ms), cantidad: ms.length, color: colorSlot(ms[0].color_slot) }))
+    return [...Map.groupBy(delGrupo, clave).entries()]
+      .map(([nombre, ms]) => ({
+        nombre,
+        total: sumar(ms, valor),
+        cantidad: ms.length,
+        color: colorSlot(ms[0].color_slot),
+        ids: idsDe(ms),
+      }))
       .sort((a, b) => b.total - a.total)
-  }, [gastos, grupo])
+  }, [delGrupo, grupo, valor])
 
-  const totalVista = grupo ? sumar(gastos.filter((m) => m.grupo === grupo)) : total
+  const totalVista = grupo ? sumar(delGrupo, valor) : total
   const max = Math.max(...filas.map((f) => f.total), 1)
 
   return (
@@ -163,16 +197,25 @@ function GastosPorGrupo({ gastos, total, fmt }: { gastos: Movimiento[]; total: n
             'Gastos por grupo'
           )}
         </h2>
-        <span className="tabular text-sm text-ink-2">{fmt(totalVista)}</span>
+        <span className="flex items-baseline gap-3">
+          {grupo && (
+            <button
+              className="text-sm text-ink-2 underline underline-offset-2 hover:text-ink"
+              onClick={() => verMovimientos({ etiqueta: grupo, ids: idsDe(delGrupo) })}
+            >
+              Ver movimientos
+            </button>
+          )}
+          <span className="tabular text-sm text-ink-2">{fmt(totalVista)}</span>
+        </span>
       </div>
       {filas.length === 0 && <p className="text-sm text-ink-2">Sin gastos este mes.</p>}
       <ul className="space-y-1">
         {filas.map((f) => (
           <li key={f.nombre}>
             <button
-              disabled={!!grupo}
-              onClick={() => setGrupo(f.nombre)}
-              className="group grid w-full grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 rounded-lg px-1 py-1.5 text-left text-sm enabled:hover:bg-surface-2 sm:grid-cols-[minmax(0,9rem)_1fr_auto]"
+              onClick={() => (grupo ? verMovimientos({ etiqueta: f.nombre, ids: f.ids }) : setGrupo(f.nombre))}
+              className="group grid w-full grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 rounded-lg px-1 py-1.5 text-left text-sm hover:bg-surface-2 sm:grid-cols-[minmax(0,9rem)_1fr_auto]"
               title={`${f.cantidad} movimiento${f.cantidad === 1 ? '' : 's'}`}
             >
               <span className="truncate">{f.nombre}</span>
@@ -192,7 +235,11 @@ function GastosPorGrupo({ gastos, total, fmt }: { gastos: Movimiento[]; total: n
           </li>
         ))}
       </ul>
-      {!grupo && filas.length > 0 && <p className="mt-2 text-xs text-muted">Tocá un grupo para ver el detalle.</p>}
+      {filas.length > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          {grupo ? 'Tocá una categoría para ver sus movimientos.' : 'Tocá un grupo para ver el detalle.'}
+        </p>
+      )}
     </>
   )
 }

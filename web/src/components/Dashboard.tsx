@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useCotizacion } from '../lib/api'
 import { mesActual, nombreMes, sumarMeses, type Vista } from '../lib/format'
 import { supabase } from '../lib/supabase'
+import type { FiltroCategorias } from '../lib/types'
 import { Historico } from './Historico'
 import { Movimientos } from './Movimientos'
 import { Resumen } from './Resumen'
@@ -20,8 +21,19 @@ export function Dashboard() {
   const añoActual = Number(mesActual().slice(0, 4))
   const [año, setAño] = useState(añoActual)
   const [vista, setVista] = useState<Vista>('ARS')
+  const [filtro, setFiltro] = useState<FiltroCategorias | null>(null)
   const { data: cotizacion } = useCotizacion()
   const mep = cotizacion ? Number(cotizacion.mep_venta) : null
+
+  const cambiarTab = (t: Tab) => {
+    setFiltro(null)
+    setTab(t)
+  }
+  const verMovimientos = (m: string, f: FiltroCategorias) => {
+    setMes(m)
+    setFiltro(f)
+    setTab('movimientos')
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16">
@@ -30,7 +42,7 @@ export function Dashboard() {
           {TABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => cambiarTab(t.id)}
               className={`btn px-2.5 py-1.5 sm:px-3 ${tab === t.id ? 'bg-surface text-ink shadow-sm' : 'text-ink-2'}`}
             >
               {t.label}
@@ -91,9 +103,11 @@ export function Dashboard() {
         </div>
       </div>
 
-      {tab === 'resumen' && <Resumen mes={mes} vista={vista} mep={mep} />}
-      {tab === 'historico' && <Historico año={año} vista={vista} mep={mep} />}
-      {tab === 'movimientos' && <Movimientos mes={mes} />}
+      {tab === 'resumen' && <Resumen mes={mes} vista={vista} mep={mep} verMovimientos={verMovimientos} />}
+      {tab === 'historico' && <Historico año={año} vista={vista} mep={mep} verMovimientos={verMovimientos} />}
+      {tab === 'movimientos' && (
+        <Movimientos mes={mes} vista={vista} mep={mep} filtro={filtro} onQuitarFiltro={() => setFiltro(null)} />
+      )}
     </div>
   )
 }
